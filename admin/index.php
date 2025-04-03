@@ -3,7 +3,7 @@ require_once '../includes/db.php';
 require_once '../includes/functions.php';
 require_once 'check_login.php';
 
-// Xử lý xóa nợ học phí nếu có yêu cầu
+// Xử lý xóa nợ học phí
 if (isset($_GET['xoa_no']) && isset($_GET['ma_sv']) && isset($_GET['ky_hoc'])) {
     $ma_sv = $_GET['ma_sv'];
     $ky_hoc = $_GET['ky_hoc'];
@@ -23,15 +23,11 @@ if (isset($_GET['xoa_no']) && isset($_GET['ma_sv']) && isset($_GET['ky_hoc'])) {
     }
 }
 
-
-// Thay đổi câu SQL trong phần lấy dữ liệu
-// Lấy tham số tìm kiếm từ URL (sử dụng null coalescing để tránh lỗi)
-// Lấy tham số tìm kiếm từ URL
+// Xử lý tìm kiếm
 $search_ma_sv = $_GET['search_ma_sv'] ?? '';
 $search_ho_ten = $_GET['search_ho_ten'] ?? '';
 $search_ky_hoc = $_GET['search_ky_hoc'] ?? '';
 
-// SQL gốc có điều kiện tìm kiếm
 $sql = "SELECT 
     hv.ma_sv, 
     hv.ho_ten,
@@ -44,7 +40,6 @@ $sql = "SELECT
 FROM hoc_vien hv
 LEFT JOIN hoc_phi hp ON hv.ma_sv = hp.ma_sv";
 
-// Thêm điều kiện WHERE nếu có tham số tìm kiếm
 $whereConditions = [];
 $params = [];
 
@@ -63,39 +58,46 @@ if (!empty($search_ky_hoc)) {
     $params[] = "%$search_ky_hoc%";
 }
 
-// Kết hợp điều kiện WHERE vào SQL gốc
 if (!empty($whereConditions)) {
     $sql .= " WHERE " . implode(" AND ", $whereConditions);
 }
 
-// Phần GROUP BY và ORDER BY giữ nguyên
 $sql .= " GROUP BY hv.ma_sv, hv.ho_ten, hv.email, hp.ky_hoc
           ORDER BY hv.ho_ten, hp.ky_hoc";
 
-// Thực thi câu lệnh
 $stmt = $db->prepare($sql);
 $stmt->execute($params);
 $ds_hoc_phi = $stmt->fetchAll();
-;
 
-// Nhóm dữ liệu theo sinh viên
+// Nhóm dữ liệu và tính tổng nợ
 $ds_sinhvien_no = [];
 foreach ($ds_hoc_phi as $hp) {
-    $ky_hoc = isset($hp['ky_hoc']) ? $hp['ky_hoc'] : 'Không xác định';
+    $ky_hoc = $hp['ky_hoc'] ?? 'Không xác định';
 
-    $ds_sinhvien_no[$hp['ma_sv']]['info'] = [
-        'ma_sv' => $hp['ma_sv'],
-        'ho_ten' => $hp['ho_ten'],
-        'email' => $hp['email']
-    ];
+    if (!isset($ds_sinhvien_no[$hp['ma_sv']])) {
+        $ds_sinhvien_no[$hp['ma_sv']] = [
+            'info' => [
+                'ma_sv' => $hp['ma_sv'],
+                'ho_ten' => $hp['ho_ten'],
+                'email' => $hp['email'],
+                'tong_no_all' => 0
+            ],
+            'hoc_ky' => []
+        ];
+    }
+
     $ds_sinhvien_no[$hp['ma_sv']]['hoc_ky'][$ky_hoc] = [
         'tong_tien' => $hp['tong_tien'],
         'da_dong' => $hp['da_dong'],
         'con_no' => $hp['con_no'],
         'han_dong' => $hp['han_dong']
     ];
+
+    // Tính tổng nợ tất cả học kỳ
+    $ds_sinhvien_no[$hp['ma_sv']]['info']['tong_no_all'] += $hp['con_no'];
 }
 ?>
+
 <!DOCTYPE html>
 <html lang="vi">
 
@@ -107,6 +109,7 @@ foreach ($ds_hoc_phi as $hp) {
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha1/dist/css/bootstrap.min.css" rel="stylesheet">
     <!-- Font Awesome -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" rel="stylesheet">
     <style>
         body {
             background-color: #f8f9fa;
@@ -200,9 +203,9 @@ foreach ($ds_hoc_phi as $hp) {
                                 <i class="fas fa-envelope me-1"></i> Gửi thông báo
                             </button>
                         </form>
-                            <a href="xuatbaocao.php" class="btn btn-danger">
-                                <i class="fas fa-file-excel me-1"></i> Xuất báo cáo
-                            </a>
+                        <a href="xuatbaocao.php" class="btn btn-danger">
+                            <i class="fas fa-file-excel me-1"></i> Xuất báo cáo
+                        </a>
                     </div>
                 </div>
                 <!-- Form tìm kiếm -->
@@ -253,20 +256,21 @@ foreach ($ds_hoc_phi as $hp) {
                                 <th class="text-end">Đã trả</th>
                                 <th class="text-end">Còn nợ</th>
                                 <th>Hạn đóng</th>
-                                <th>Hành động</th>
+                                <th class="btn-action-group">Hành động</th>
                             </tr>
                         </thead>
                         <tbody>
                             <?php foreach ($ds_sinhvien_no as $ma_sv => $sinh_vien): ?>
-                                <?php $first_row = true; ?>
+                                <?php $row_count = count($sinh_vien['hoc_ky']); ?>
+                                <?php $row_index = 0; ?>
+
                                 <?php foreach ($sinh_vien['hoc_ky'] as $ky_hoc => $hoc_phi): ?>
                                     <tr>
-                                        <?php if ($first_row): ?>
-                                            <td rowspan="<?= count($sinh_vien['hoc_ky']) ?>"><?= $sinh_vien['info']['ma_sv'] ?></td>
-                                            <td rowspan="<?= count($sinh_vien['hoc_ky']) ?>"><?= $sinh_vien['info']['ho_ten'] ?>
-                                            </td>
-                                            <?php $first_row = false; ?>
+                                        <?php if ($row_index === 0): ?>
+                                            <td rowspan="<?= $row_count ?>"><?= $sinh_vien['info']['ma_sv'] ?></td>
+                                            <td rowspan="<?= $row_count ?>"><?= $sinh_vien['info']['ho_ten'] ?></td>
                                         <?php endif; ?>
+
                                         <td><?= $ky_hoc ?></td>
                                         <td class="text-end"><?= number_format($hoc_phi['tong_tien']) ?> VNĐ</td>
                                         <td class="text-end"><?= number_format($hoc_phi['da_dong']) ?> VNĐ</td>
@@ -274,34 +278,58 @@ foreach ($ds_hoc_phi as $hp) {
                                             class="text-end fw-bold <?= ($hoc_phi['con_no'] > 0) ? 'text-danger' : 'text-success' ?>">
                                             <?= number_format($hoc_phi['con_no']) ?> VNĐ
                                         </td>
-                                        <td>
-                                            <?= ($hoc_phi['con_no'] == 0) ? 'Không có' : date('d/m/Y', strtotime($hoc_phi['han_dong'])) ?>
+                                        <td><?= $hoc_phi['han_dong'] ? date('d/m/Y', strtotime($hoc_phi['han_dong'])) : 'N/A' ?>
                                         </td>
 
-                                        <td class="action-btns">
-                                            <a href="them_hocphi.php?ma_sv=<?= $sinh_vien['info']['ma_sv'] ?>&ky_hoc=<?= urlencode($ky_hoc) ?>"
-                                                class="btn btn-sm btn-primary" title="Thêm thanh toán">
-                                                <i class="fas fa-plus-circle"></i>
-                                            </a>
-                                            <a href="gui_thongbao.php?ma_sv=<?= $sinh_vien['info']['ma_sv'] ?>&ky_hoc=<?= urlencode($ky_hoc) ?>"
-                                                class="btn btn-sm btn-warning" title="Gửi thông báo">
-                                                <i class="fas fa-bell"></i>
-                                            </a>
-                                            <a href="index.php?xoa_no=1&ma_sv=<?= $sinh_vien['info']['ma_sv'] ?>&ky_hoc=<?= urlencode($ky_hoc) ?>"
-                                                class="btn btn-sm btn-danger" title="Xóa nợ"
-                                                onclick="return confirm('Bạn có chắc muốn xóa nợ học kỳ <?= $ky_hoc ?> của sinh viên <?= $sinh_vien['info']['ma_sv'] ?>?')">
-                                                <i class="fas fa-trash-alt"></i>
-                                            </a>
-                                            <a href="sua_hocvien.php?ma_sv=<?= $sinh_vien['info']['ma_sv'] ?>"
-                                                class="btn btn-sm btn-info ms-2" title="Sửa thông tin">
-                                                <i class="fas fa-user-edit"></i>
-                                            </a> <a
-                                                href="sua_hocphi.php?ma_sv=<?= $sinh_vien['info']['ma_sv'] ?>&ky_hoc=<?= urlencode($ky_hoc) ?>"
-                                                class="btn btn-sm btn-info" title="Sửa học phí">
-                                                <i class="fas fa-edit"></i>
-                                            </a>
+                                        <td class="btn-action-group">
+                                            <div class="d-flex gap-2">
+                                                <!-- Nút chung -->
+                                                <a href="them_hocphi.php?ma_sv=<?= $ma_sv ?>&ky_hoc=<?= urlencode($ky_hoc) ?>"
+                                                    class="btn btn-sm btn-primary" title="Thêm học phí">
+                                                    <i class="fas fa-plus-circle"></i>
+                                                </a>
+
+                                                <!-- Nút xóa nợ hoặc xóa SV -->
+                                                <?php if ($sinh_vien['info']['tong_no_all'] > 0): ?>
+                                                    <?php if ($hoc_phi['con_no'] > 0): ?>
+                                                        <a href="index.php?xoa_no=1&ma_sv=<?= $ma_sv ?>&ky_hoc=<?= urlencode($ky_hoc) ?>"
+                                                            class="btn btn-sm btn-danger" title="Xóa nợ học kỳ"
+                                                            onclick="return confirm('Bạn chắc chắn muốn xóa nợ học kỳ <?= $ky_hoc ?>?')">
+                                                            <i class="fas fa-trash-alt"></i>
+                                                        </a>
+                                                    <?php else: ?>
+                                                        <button class="btn btn-sm btn-secondary btn-disabled"
+                                                            title="Học kỳ đã thanh toán đủ">
+                                                            <i class="fas fa-check-circle"></i>
+                                                        </button>
+                                                    <?php endif; ?>
+                                                <?php else: ?>
+                                                    <?php if ($row_index === 0): ?>
+                                                        <a href="xoa_sinhvien.php?ma_sv=<?= $ma_sv ?>" class="btn btn-sm btn-danger"
+                                                            title="Xóa sinh viên"
+                                                            onclick="return confirm('Bạn chắc chắn muốn xóa sinh viên <?= $ma_sv ?>?')">
+                                                            <i class="bi bi-person-x-fill"></i>
+                                                        </a>
+                                                    <?php endif; ?>
+                                                <?php endif; ?>
+
+                                                <!-- Các nút khác -->
+                                                <a href="gui_thongbao.php?ma_sv=<?= $ma_sv ?>&ky_hoc=<?= urlencode($ky_hoc) ?>"
+                                                    class="btn btn-sm btn-warning" title="Gửi thông báo">
+                                                    <i class="fas fa-bell"></i>
+                                                </a>
+                                                <a href="sua_hocvien.php?ma_sv=<?= $sinh_vien['info']['ma_sv'] ?>"
+                                                    class="btn btn-sm btn-info ms-2" title="Sửa thông tin">
+                                                    <i class="fas fa-user-edit"></i>
+                                                </a> <a
+                                                    href="sua_hocphi.php?ma_sv=<?= $sinh_vien['info']['ma_sv'] ?>&ky_hoc=<?= urlencode($ky_hoc) ?>"
+                                                    class="btn btn-sm btn-info" title="Sửa học phí">
+                                                    <i class="fas fa-edit"></i>
+                                                </a>
+                                            </div>
                                         </td>
                                     </tr>
+                                    <?php $row_index++; ?>
                                 <?php endforeach; ?>
                             <?php endforeach; ?>
                         </tbody>
