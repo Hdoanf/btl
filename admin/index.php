@@ -200,11 +200,9 @@ foreach ($ds_hoc_phi as $hp) {
                                 <i class="fas fa-envelope me-1"></i> Gửi thông báo
                             </button>
                         </form>
-                        <div class="mb-3">
                             <a href="xuatbaocao.php" class="btn btn-danger">
                                 <i class="fas fa-file-excel me-1"></i> Xuất báo cáo
                             </a>
-                        </div>
                     </div>
                 </div>
                 <!-- Form tìm kiếm -->
