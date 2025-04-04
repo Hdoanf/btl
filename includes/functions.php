@@ -58,7 +58,7 @@ function gui_thongbao_cho_sv($ma_sv) {
     $sql = "SELECT hv.*, 
             SUM(hp.tong_tien) as tong_no,
             SUM(hp.da_dong) as da_dong,
-            (SUM(hp.tong_tien) - SUM(hp.da_dong) as con_no
+            (SUM(hp.tong_tien) - SUM(hp.da_dong)) as con_no
             FROM hoc_vien hv
             JOIN hoc_phi hp ON hv.ma_sv = hp.ma_sv
             WHERE hv.ma_sv = ? AND hp.han_dong < CURDATE()
